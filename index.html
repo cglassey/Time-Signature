@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tap Time Trainer — Count Music by Time Signatures</title>
+<meta name="description" content="Gamified metronome to learn time signatures by tapping along.">
+<style>
+  :root {
+    --bg: #0f1222;
+    --panel: #181c36;
+    --accent: #6ee7ff;
+    --accent2:#b388ff;
+    --good: #3ddc97;
+    --warn: #ffd166;
+    --bad: #ff6b6b;
+    --text: #eef1ff;
+  }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 16px; display:grid; gap:16px; }
+  header { text-align:center; }
+  h1 { font-size: clamp(1.4rem, 3vw, 2rem); margin: 8px 0 0; }
+  .controls, .stats, .help, .footer { background: var(--panel); border-radius:12px; padding:12px; box-shadow: 0 8px 20px rgba(0,0,0,.25); }
+  .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); align-items:end; }
+  label { font-size:.9rem; opacity:.9; display:block; margin-bottom:6px; }
+  select, input[type=number] { width:100%; box-sizing:border-box; background:#0d1030; border:1px solid #2b2f57; color:var(--text);
+    padding:10px 12px; border-radius:10px; outline:none; }
+  .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+  button {
+    background: linear-gradient(180deg, var(--accent), var(--accent2));
+    border:0; color:#0b0e2a; font-weight:700; padding:10px 16px; border-radius:999px; cursor:pointer;
+    box-shadow: 0 6px 16px rgba(110,231,255,.25); transition: transform .05s ease;
+  }
+  button:active { transform: translateY(1px) scale(0.99); }
+  button.secondary { background:#2b2f57; color:var(--text); box-shadow:none; }
+  .pad-wrap { display:grid; gap:16px; place-items:center; padding: 6px 0; }
+  .circle {
+    width: clamp(220px, 55vw, 420px); height: clamp(220px, 55vw, 420px);
+    border-radius:50%; background: radial-gradient(closest-side, #1a1f45, #0f1333);
+    border: 3px solid #2b2f57; position:relative; display:grid; place-items:center;
+    box-shadow: 0 12px 40px rgba(0,0,0,.4), inset 0 0 60px rgba(179,136,255,.15);
+    user-select:none;
+  }
+  .tap-pad {
+    width: 86%; height: 86%; border-radius:50%;
+    display:grid; place-items:center; text-align:center; padding: 12px;
+    background: radial-gradient(closest-side, rgba(110,231,255,.09), rgba(179,136,255,.05));
+    border: 2px dashed #3a3f73; cursor:pointer;
+    transition: transform .06s ease, border-color .2s ease, box-shadow .2s ease;
+  }
+  .tap-pad:active { transform: scale(0.985); }
+  .pulse {
+    position:absolute; inset:0; border-radius:50%;
+    box-shadow: 0 0 0 0 rgba(110,231,255, 0.6); animation: pulse 600ms ease-out forwards;
+    pointer-events:none;
+  }
+  @keyframes pulse { to { box-shadow: 0 0 0 30px rgba(110,231,255, 0); } }
+  .beat-leds { position:absolute; top:10px; left:50%; transform: translateX(-50%);
+    display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  .led { width:14px; height:14px; border-radius:50%; background:#2b2f57; box-shadow: inset 0 0 0 2px #3a3f73; }
+  .led.on { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .led.downbeat.on { background: #79ffbf; box-shadow: 0 0 12px #79ffbf; }
+  .readout { text-align:center; font-variant-numeric: tabular-nums; line-height:1.3; display:grid; gap:6px; }
+  .big { font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight: 800; }
+  .fine { opacity:.85 }
+  .result { min-height: 22px; font-weight:700; }
+  .result.good { color:var(--good); }
+  .result.ok   { color:var(--warn); }
+  .result.bad  { color:var(--bad); }
+  .stats { display:grid; gap:8px; }
+  .stat-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:8px; }
+  .stat { background:#0d1030; border:1px solid #2b2f57; border-radius:10px; padding:10px; text-align:center; }
+  .meter { height:10px; background:#0b0e2a; border-radius:999px; overflow:hidden; border:1px solid #2b2f57; }
+  .meter > div { height:100%; width:0%; background: linear-gradient(90deg, var(--good), var(--warn)); transition: width .2s ease; }
+  .help p { margin:.4rem 0; opacity:.92 }
+  .tag { display:inline-block; background:#0d1030; border:1px solid #2b2f57; padding:.2rem .5rem; border-radius:999px; margin-right:.4rem; font-size:.85rem; }
+  .footer { text-align:center; font-size:.9rem; opacity:.8 }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎵 Tap Time Trainer</h1>
+    <p style="opacity:.85">Learn to feel <strong>time signatures</strong> by tapping in time. Earn points for accuracy, build streaks, and level up!</p>
+  </header>
+
+  <section class="controls">
+    <div class="grid">
+      <div>
+        <label for="sig">Time Signature</label>
+        <select id="sig" autocomplete="off">
+          <option value="4/4" selected>4/4 (common time)</option>
+          <option value="3/4">3/4 (waltz)</option>
+          <option value="2/4">2/4 (march)</option>
+          <option value="6/8">6/8 (compound duple)</option>
+          <option value="5/4">5/4 (odd)</option>
+          <option value="7/8">7/8 (odd)</option>
+          <option value="9/8">9/8</option>
+          <option value="12/8">12/8</option>
+        </select>
+      </div>
+      <div>
+        <label for="bpm">Tempo (BPM)</label>
+        <input id="bpm" type="number" value="90" min="20" max="240" step="1" />
+      </div>
+      <div>
+        <label for="subdiv">Subdivision</label>
+        <select id="subdiv">
+          <option value="1" selected>Quarter note (no subdivision)</option>
+          <option value="2">Eighth notes (×2)</option>
+          <option value="3">Triplets (×3)</option>
+          <option value="4">Sixteenth notes (×4)</option>
+        </select>
+      </div>
+      <div>
+        <label>Mode</label>
+        <div class="btn-row">
+          <button class="secondary" id="mode-train" aria-pressed="true">Training</button>
+          <button class="secondary" id="mode-chal" aria-pressed="false">Challenge</button>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="startBtn">Start</button>
+        <button class="secondary" id="stopBtn">Stop</button>
+        <button class="secondary" id="resetBtn">Reset</button>
+        <button class="secondary" id="tapTempoBtn" title="Tap to set BPM">Tap Tempo</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="pad-wrap">
+    <div class="circle" id="circle">
+      <div class="beat-leds" id="leds"></div>
+      <div class="tap-pad" id="tapPad" role="button" aria-label="Tap in time">
+        <div class="readout">
+          <div class="big" id="measureText">—</div>
+          <div class="fine"><span id="sigText">4/4</span> • <span id="bpmText">90</span> BPM • <span id="subText">¼ notes</span></div>
+          <div class="result" id="lastResult">&nbsp;</div>
+          <div class="fine" id="hint">Press Start to begin</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="stat-grid">
+      <div class="stat"><div>Score</div><div class="big" id="score">0</div></div>
+      <div class="stat"><div>Streak</div><div class="big" id="streak">0</div></div>
+      <div class="stat"><div>Level</div><div class="big" id="level">1</div></div>
+      <div class="stat">
+        <div>Accuracy (last 16)</div>
+        <div class="meter"><div id="accMeter"></div></div>
+        <div id="accText" style="margin-top:6px;">—</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="help">
+    <p><span class="tag">Training</span> Tap every <strong>beat</strong>. Downbeats glow green. Aim to land within ±40ms for a “Perfect”.</p>
+    <p><span class="tag">Challenge</span> We hide the click after 2 measures. Keep tapping—the LED shows where you <em>should</em> be. The click returns every 4 measures to check you.</p>
+    <p>Tip: Use <strong>Tap Tempo</strong> to set BPM from your finger taps.</p>
+  </section>
+
+  <div class="footer">© 2025 Tap Time Trainer — MIT License</div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  // Elements
+  const sigEl = $("sig");
+  const bpmEl = $("bpm");
+  const subdivEl = $("subdiv");
+  const startBtn = $("startBtn");
+  const stopBtn = $("stopBtn");
+  const resetBtn = $("resetBtn");
+  const tapTempoBtn = $("tapTempoBtn");
+  const tapPad = $("tapPad");
+  const circle = $("circle");
+  const ledsEl = $("leds");
+  const measureText = $("measureText");
+  const sigText = $("sigText");
+  const bpmText = $("bpmText");
+  const subText = $("subText");
+  const lastResult = $("lastResult");
+  const hint = $("hint");
+  const scoreEl = $("score");
+  const streakEl = $("streak");
+  const levelEl = $("level");
+  const accMeter = $("accMeter");
+  const accText = $("accText");
+  const modeTrainBtn = $("mode-train");
+  const modeChalBtn = $("mode-chal");
+
+  // App state
+  let audioCtx;
+  let clickGain, clickOsc;
+  let isRunning = false;
+  let lookaheadTimer;
+  let scheduleAhead = 0.1; // seconds
+  let nextBeatTime = 0;
+  let beatIndex = 0;
+  let measureIndex = 0;
+  let taps = []; // [{t, errorMs, judged}]
+  let accWindow = []; // last 16
+  let score = 0, streak = 0, level = 1;
+  let mode = "training"; // or "challenge"
+  let hideClick = false;
+  let challengeCounter = 0;
+  let tapTempoTimes = [];
+
+  // Parameters
+  function parseSig(v) {
+    const [num, den] = v.split("/").map(Number);
+    return {num, den};
+  }
+  function beatSeconds() {
+    const bpm = clamp(Number(bpmEl.value) || 90, 20, 240);
+    return 60 / bpm;
+  }
+  function clamp(x, lo, hi){ return Math.max(lo, Math.min(hi, x)); }
+
+  // UI helpers
+  function setMode(newMode){
+    mode = newMode;
+    modeTrainBtn.setAttribute("aria-pressed", newMode==="training");
+    modeChalBtn.setAttribute("aria-pressed", newMode==="challenge");
+    modeTrainBtn.classList.toggle("active", newMode==="training");
+    modeChalBtn.classList.toggle("active", newMode==="challenge");
+  }
+
+  function updateHUD(){
+    sigText.textContent = sigEl.value;
+    bpmText.textContent = clamp(Number(bpmEl.value) || 90, 20, 240);
+    const sub = Number(subdivEl.value);
+    subText.textContent = sub===1 ? "¼ notes" : (sub===2 ? "♪ eighths" : (sub===3 ? "triplets" : "sixteenths"));
+  }
+
+  function buildLEDs(){
+    const {num} = parseSig(sigEl.value);
+    ledsEl.innerHTML = "";
+    for(let i=0;i<num;i++){
+      const d=document.createElement("div");
+      d.className="led"+(i===0?" downbeat":"");
+      ledsEl.appendChild(d);
+    }
+  }
+
+  function flashLED(i){
+    const kids=[...ledsEl.children];
+    kids.forEach(k=>k.classList.remove("on"));
+    if(kids[i]) kids[i].classList.add("on");
+  }
+
+  function pulse(){
+    const p=document.createElement("div");
+    p.className="pulse"; circle.appendChild(p);
+    setTimeout(()=>p.remove(), 600);
+  }
+
+  function setResult(text, cls){
+    lastResult.className = "result " + (cls||"");
+    lastResult.textContent = text;
+  }
+
+  function updateStats(){
+    scoreEl.textContent = Math.round(score);
+    streakEl.textContent = streak;
+    levelEl.textContent = level;
+    if(accWindow.length){
+      const good = accWindow.filter(x=>x<=40).length;
+      const ok = accWindow.filter(x=>x<=90 && x>40).length;
+      const ratio = clamp((good*1 + ok*0.6)/accWindow.length, 0, 1);
+      accMeter.style.width = Math.round(ratio*100) + "%";
+      const avg = Math.round(accWindow.reduce((a,b)=>a+b,0)/accWindow.length);
+      accText.textContent = `${avg} ms avg error`;
+    } else {
+      accMeter.style.width = "0%";
+      accText.textContent="—";
+    }
+  }
+
+  // Audio setup
+  function initAudio(){
+    if(audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    clickGain = audioCtx.createGain(); clickGain.gain.value = 0;
+    clickOsc = audioCtx.createOscillator(); clickOsc.type="square"; clickOsc.frequency.value=1000;
+    clickOsc.connect(clickGain).connect(audioCtx.destination);
+    clickOsc.start();
+  }
+
+  function scheduleClick(t, isDownbeat){
+    if(!audioCtx) return;
+    const g = (hideClick ? 0 : (isDownbeat ? 0.18 : 0.11));
+    clickGain.gain.setValueAtTime(0, t);
+    clickGain.gain.linearRampToValueAtTime(g, t + 0.001);
+    clickGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    // Visuals
+    setTimeout(()=>pulse(), Math.max(0, (t - audioCtx.currentTime)*1000));
+  }
+
+  function scheduler(){
+    const bsec = beatSeconds();
+    const {num} = parseSig(sigEl.value);
+    while (nextBeatTime < audioCtx.currentTime + scheduleAhead){
+      const isDown = (beatIndex % num) === 0;
+      scheduleClick(nextBeatTime, isDown);
+      ((bi, mi, t)=>{
+        setTimeout(()=>{
+          flashLED(bi % num);
+          measureText.textContent = `Measure ${mi+1} • Beat ${ (bi % num) + 1 }`;
+        }, Math.max(0, (t - audioCtx.currentTime)*1000));
+      })(beatIndex, measureIndex, nextBeatTime);
+      beatIndex++;
+      if(beatIndex % num === 0) {
+        measureIndex++;
+        if(mode==="challenge"){
+          challengeCounter++;
+          // After 2 measures hide for 4, then show 1, repeat
+          if(challengeCounter % 7 === 2) hideClick = true;
+          if(challengeCounter % 7 === 6) hideClick = false;
+        }
+      }
+      nextBeatTime += bsec / Number(subdivEl.value);
+    }
+  }
+
+  function start(){
+    if(isRunning) return;
+    initAudio();
+    updateHUD(); buildLEDs();
+    isRunning = true;
+    hideClick = false; challengeCounter = 0;
+    const now = audioCtx.currentTime + 0.05;
+    nextBeatTime = now;
+    beatIndex = 0; measureIndex = 0;
+    lookaheadTimer = setInterval(scheduler, 25);
+    hint.textContent = "Tap the pad in time with the beat";
+    setResult("", "");
+  }
+
+  function stop(){
+    if(!isRunning) return;
+    isRunning = false;
+    clearInterval(lookaheadTimer);
+    lookaheadTimer = null;
+    hideClick = false;
+    hint.textContent = "Stopped";
+  }
+
+  function reset(){
+    stop();
+    score = 0; streak = 0; level = 1; taps = []; accWindow = [];
+    setResult("", ""); updateStats();
+    measureText.textContent = "—";
+    [...ledsEl.children].forEach(k=>k.classList.remove("on"));
+    hint.textContent = "Press Start to begin";
+  }
+
+  // Scoring
+  function judgeTapTapTime(nowTime){
+    if(!audioCtx || !isRunning) return;
+    const bsec = beatSeconds() / Number(subdivEl.value);
+    // Find nearest scheduled beat time around now: compute phase relative to first beat
+    const sinceStart = nowTime - (nextBeatTime - bsec * ((beatIndex>0)?1:0));
+    // nearest beat index (including subdivisions) relative to "now"
+    const idx = Math.round((nowTime - (nextBeatTime - bsec)) / bsec);
+    const nearestTime = (nextBeatTime - bsec) + idx*bsec;
+    const errorMs = Math.round((nowTime - nearestTime) * 1000);
+    const absErr = Math.abs(errorMs);
+
+    accWindow.push(absErr);
+    if(accWindow.length > 16) accWindow.shift();
+
+    let deltaScore = 0;
+    if (absErr <= 40) { // perfect
+      deltaScore = 100;
+      streak++; if(streak % 8 === 0) level++;
+      setResult(`Perfect (${errorMs} ms)`, "good");
+    } else if (absErr <= 90) {
+      deltaScore = 45;
+      streak = Math.max(0, streak);
+      setResult(`Close (${errorMs} ms)`, "ok");
+    } else {
+      deltaScore = -30;
+      streak = 0;
+      setResult(`Miss (${errorMs} ms)`, "bad");
+    }
+    score = Math.max(0, score + deltaScore);
+    updateStats();
+  }
+
+  // Tap handlers
+  function onTap(){
+    pulse();
+    if(audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    if(!isRunning){
+      setResult("Press Start to begin", "");
+      return;
+    }
+    judgeTapTapTime(audioCtx.currentTime);
+  }
+
+  // Tap tempo
+  function onTapTempo(){
+    const now = performance.now();
+    tapTempoTimes.push(now);
+    // keep last 6 taps
+    if(tapTempoTimes.length > 6) tapTempoTimes.shift();
+    if(tapTempoTimes.length >= 2){
+      const intervals = [];
+      for(let i=1;i<tapTempoTimes.length;i++) intervals.push(tapTempoTimes[i]-tapTempoTimes[i-1]);
+      const avgMs = intervals.reduce((a,b)=>a+b,0)/intervals.length;
+      const bpm = clamp(Math.round(60000/avgMs), 20, 240);
+      bpmEl.value = bpm;
+      updateHUD();
+      setResult(`Tap Tempo: ${bpm} BPM`, "");
+    }
+  }
+
+  // Events
+  tapPad.addEventListener("pointerdown", onTap);
+  startBtn.addEventListener("click", start);
+  stopBtn.addEventListener("click", stop);
+  resetBtn.addEventListener("click", reset);
+  tapTempoBtn.addEventListener("pointerdown", onTapTempo);
+  [sigEl, bpmEl, subdivEl].forEach(el=>el.addEventListener("change", ()=>{
+    updateHUD(); buildLEDs();
+  }));
+  modeTrainBtn.addEventListener("click", ()=>setMode("training"));
+  modeChalBtn.addEventListener("click", ()=>setMode("challenge"));
+
+  // Init
+  updateHUD(); buildLEDs();
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.hidden) stop();
+  });
+})();
+</script>
+</body>
+</html>
